@@ -18,72 +18,38 @@ st.set_page_config(
 )
 
 # ── Bootstrap: build the database on first run (e.g. fresh Streamlit Cloud deploy) ──
-# Concurrency-safe: Streamlit reruns this script on every page click, so multiple
-# sessions can hit this block at nearly the same time. A lock file ensures only
-# one of them actually rebuilds the database; the others wait for it to finish.
-import time
+# st.cache_resource is process-wide and Streamlit serialises concurrent calls to the
+# same cached function internally, so this runs exactly once no matter how many
+# sessions/reruns hit it at the same time — no manual locking or polling needed.
+DB_PATH  = os.path.join(PROJECT_ROOT, "database", "fraud_platform.duckdb")
+KPI_PATH = os.path.join(PROJECT_ROOT, "data", "outputs", "executive_kpis.json")
 
-DB_PATH   = os.path.join(PROJECT_ROOT, "database", "fraud_platform.duckdb")
-KPI_PATH  = os.path.join(PROJECT_ROOT, "data", "outputs", "executive_kpis.json")
-LOCK_PATH = os.path.join(PROJECT_ROOT, "database", ".pipeline_lock")
-LOCK_STALE_SECONDS = 120  # if a lock is older than this, assume the builder crashed
 
-def _lock_is_stale() -> bool:
-    try:
-        return (time.time() - os.path.getmtime(LOCK_PATH)) > LOCK_STALE_SECONDS
-    except OSError:
+@st.cache_resource(show_spinner="First-time setup: building the fraud database (~15s)...")
+def ensure_database_built() -> bool:
+    if os.path.exists(DB_PATH) and os.path.exists(KPI_PATH):
         return True
 
-def _try_acquire_lock() -> bool:
-    try:
-        fd = os.open(LOCK_PATH, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        os.close(fd)
-        return True
-    except FileExistsError:
-        if _lock_is_stale():
-            try:
-                os.remove(LOCK_PATH)
-            except OSError:
-                pass
-            return _try_acquire_lock()
-        return False
+    # Start from a guaranteed-clean file so foreign-key ordering in the
+    # pipeline's per-table deletes can never conflict with leftover data
+    # from a previous partial/crashed build.
+    if os.path.exists(DB_PATH):
+        os.remove(DB_PATH)
+    wal_path = DB_PATH + ".wal"
+    if os.path.exists(wal_path):
+        os.remove(wal_path)
 
-def _release_lock():
-    try:
-        os.remove(LOCK_PATH)
-    except OSError:
-        pass
+    import importlib.util
 
-if not os.path.exists(DB_PATH) or not os.path.exists(KPI_PATH):
-    if _try_acquire_lock():
-        with st.spinner("First-time setup: building the fraud database (~15s)..."):
-            try:
-                # Start from a guaranteed-clean file so foreign-key ordering
-                # in the pipeline's per-table deletes can never conflict with
-                # leftover data from a previous partial/crashed build.
-                if os.path.exists(DB_PATH):
-                    os.remove(DB_PATH)
-                wal_path = DB_PATH + ".wal"
-                if os.path.exists(wal_path):
-                    os.remove(wal_path)
+    run_pipeline_path = os.path.join(PROJECT_ROOT, "etl", "run_pipeline.py")
+    spec = importlib.util.spec_from_file_location("run_pipeline", run_pipeline_path)
+    run_pipeline = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(run_pipeline)
+    run_pipeline.main()
+    return True
 
-                import importlib.util
 
-                run_pipeline_path = os.path.join(PROJECT_ROOT, "etl", "run_pipeline.py")
-                spec = importlib.util.spec_from_file_location("run_pipeline", run_pipeline_path)
-                run_pipeline = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(run_pipeline)
-                run_pipeline.main()
-            finally:
-                _release_lock()
-        st.rerun()
-    else:
-        with st.spinner("Another session is building the database — waiting..."):
-            for _ in range(60):  # wait up to ~60s
-                time.sleep(1)
-                if os.path.exists(DB_PATH) and os.path.exists(KPI_PATH):
-                    break
-        st.rerun()
+ensure_database_built()
 
 # ── Sidebar navigation ────────────────────────────────────────────────────────
 st.sidebar.title("🛡️ Fraud Risk Platform")

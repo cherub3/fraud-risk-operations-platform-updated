@@ -32,14 +32,16 @@ def load_kpis() -> dict:
 @st.cache_data(ttl=300)
 def load_fraud_scores() -> pd.DataFrame:
     con = _con()
-    df = con.execute("""
-        SELECT fs.*, t.account_id, t.amount, t.transaction_date,
-               t.merchant_category, t.transaction_type, t.location_country,
-               t.hour_of_day, t.true_label
-        FROM fraud_scores fs
-        JOIN transactions t ON fs.transaction_id = t.transaction_id
-    """).df()
-    con.close()
+    try:
+        df = con.execute("""
+            SELECT fs.*, t.account_id, t.amount, t.transaction_date,
+                   t.merchant_category, t.transaction_type, t.location_country,
+                   t.hour_of_day, t.true_label, t.is_international
+            FROM fraud_scores fs
+            JOIN transactions t ON fs.transaction_id = t.transaction_id
+        """).df()
+    finally:
+        con.close()
     df["transaction_date"] = pd.to_datetime(df["transaction_date"])
     return df
 
@@ -47,8 +49,10 @@ def load_fraud_scores() -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def load_cases() -> pd.DataFrame:
     con = _con()
-    df = con.execute("SELECT * FROM fraud_cases").df()
-    con.close()
+    try:
+        df = con.execute("SELECT * FROM fraud_cases").df()
+    finally:
+        con.close()
     df["assigned_at"]  = pd.to_datetime(df["assigned_at"])
     df["sla_deadline"] = pd.to_datetime(df["sla_deadline"])
     return df
@@ -57,8 +61,10 @@ def load_cases() -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def load_investigation_log() -> pd.DataFrame:
     con = _con()
-    df = con.execute("SELECT * FROM investigation_log").df()
-    con.close()
+    try:
+        df = con.execute("SELECT * FROM investigation_log").df()
+    finally:
+        con.close()
     df["changed_at"] = pd.to_datetime(df["changed_at"])
     return df
 
@@ -66,16 +72,20 @@ def load_investigation_log() -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def load_watchlist() -> pd.DataFrame:
     con = _con()
-    df = con.execute("SELECT * FROM fraud_watchlist").df()
-    con.close()
+    try:
+        df = con.execute("SELECT * FROM fraud_watchlist").df()
+    finally:
+        con.close()
     return df
 
 
 @st.cache_data(ttl=300)
 def load_audit_trail() -> pd.DataFrame:
     con = _con()
-    df = con.execute("SELECT * FROM audit_trail").df()
-    con.close()
+    try:
+        df = con.execute("SELECT * FROM audit_trail").df()
+    finally:
+        con.close()
     df["event_at"] = pd.to_datetime(df["event_at"])
     return df
 
@@ -83,7 +93,9 @@ def load_audit_trail() -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def load_transactions() -> pd.DataFrame:
     con = _con()
-    df = con.execute("SELECT * FROM transactions").df()
-    con.close()
+    try:
+        df = con.execute("SELECT * FROM transactions").df()
+    finally:
+        con.close()
     df["transaction_date"] = pd.to_datetime(df["transaction_date"])
     return df
