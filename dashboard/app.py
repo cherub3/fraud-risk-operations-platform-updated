@@ -17,6 +17,21 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+# ── Bootstrap: build the database on first run (e.g. fresh Streamlit Cloud deploy) ──
+DB_PATH  = os.path.join(PROJECT_ROOT, "database", "fraud_platform.duckdb")
+KPI_PATH = os.path.join(PROJECT_ROOT, "data", "outputs", "executive_kpis.json")
+
+if not os.path.exists(DB_PATH) or not os.path.exists(KPI_PATH):
+    with st.spinner("First-time setup: building the fraud database (~15s)..."):
+        import importlib.util
+
+        run_pipeline_path = os.path.join(PROJECT_ROOT, "etl", "run_pipeline.py")
+        spec = importlib.util.spec_from_file_location("run_pipeline", run_pipeline_path)
+        run_pipeline = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(run_pipeline)
+        run_pipeline.main()
+    st.rerun()
+
 # ── Sidebar navigation ────────────────────────────────────────────────────────
 st.sidebar.title("🛡️ Fraud Risk Platform")
 st.sidebar.markdown("---")
