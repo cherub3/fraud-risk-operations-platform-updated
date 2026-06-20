@@ -113,7 +113,7 @@ def render():
 
     signal_df = filtered[signal_cols].copy()
     signal_df.columns = signal_labels
-    signal_summary = signal_df.apply(pd.value_counts).fillna(0).T
+    signal_summary = signal_df.apply(lambda col: col.value_counts()).fillna(0).T
     for col in ["Up", "Stable", "Down"]:
         if col not in signal_summary.columns:
             signal_summary[col] = 0
